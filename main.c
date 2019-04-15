@@ -29,7 +29,7 @@ static float PQ_EOTF(float N)
     return powf(N1m2c1 / c2c3N1m2, 1 / PQ_M1);
 }
 
-void makePQLUT(float * out)
+void pqCurve(float * out)
 {
     const float c1 = 0.8359375f;       // 3424 / 4096
     const float c2 = 18.8515625f;      // 2413 / 4096 * 32
@@ -43,7 +43,25 @@ void makePQLUT(float * out)
     }
 }
 
-int main(int argc, char * argv[])
+void hlgCurve(float * out)
+{
+    const float HLG_A = 0.17883277f;
+    const float HLG_B = 1.0f - (4.0f * HLG_A);
+    const float HLG_C = 0.5f - HLG_A * logf(4.0f * HLG_A);
+
+    for (int i = 0; i < 4096; ++i) {
+        float src = (float)i / 4095.0f;
+        if (src < 0.5f) {
+            out[i] = (src * src) / 3.0f;
+        } else {
+            out[i] = (expf((src - HLG_C) / HLG_A) + HLG_B) / 12.0f;
+        }
+    }
+}
+
+typedef void (* CurveFunc)(float * out);
+
+void makeCurve(const char * title, const char * outputFilename, CurveFunc curveFunc)
 {
     float primaries[8];
     primaries[0] = 0.64f;
@@ -55,15 +73,11 @@ int main(int argc, char * argv[])
     primaries[6] = 0.3127f;
     primaries[7] = 0.3290f;
 
-    float gamma = 2.2f;
-    float maxLuminance = 10000;
-
     cmsContext lcms = cmsCreateContext(NULL, NULL);
 
     cmsToneCurve * curves[3];
     cmsCIExyYTRIPLE dstPrimaries;
     cmsCIExyY dstWhitePoint;
-    cmsCIEXYZ lumi;
 
     dstPrimaries.Red.x = primaries[0];
     dstPrimaries.Red.y = primaries[1];
@@ -79,19 +93,14 @@ int main(int argc, char * argv[])
     dstWhitePoint.Y = 1.0f;
 
     float * toneCurve = (float *)malloc(sizeof(float) * 4096);
-    makePQLUT(toneCurve);
+    curveFunc(toneCurve);
 
-    curves[0] = cmsBuildTabulatedToneCurveFloat(lcms, 4096, toneCurve); //cmsBuildGamma(lcms, gamma);
+    curves[0] = cmsBuildTabulatedToneCurveFloat(lcms, 4096, toneCurve);
     curves[1] = curves[0];
     curves[2] = curves[0];
 
     cmsHPROFILE profile = cmsCreateRGBProfileTHR(lcms, &dstWhitePoint, &dstPrimaries, curves);
     cmsFreeToneCurve(curves[0]);
-
-    lumi.X = 0.0f;
-    lumi.Y = maxLuminance;
-    lumi.Z = 0.0f;
-    cmsWriteTag(profile, cmsSigLuminanceTag, &lumi);
 
     cmsUInt32Number bytesNeeded;
     cmsSaveProfileToMem(profile, NULL, &bytesNeeded);
@@ -108,13 +117,13 @@ int main(int argc, char * argv[])
         uint8_t * rawCurve = malloc(rawCurveSize);
         cmsReadRawTag(rereadProfile, cmsSigRedTRCTag, rawCurve, rawCurveSize);
 
-        FILE * outCurve = fopen("pqCurve.bin", "wb");
+        FILE * outCurve = fopen(outputFilename, "wb");
         fwrite(rawCurve, 1, rawCurveSize, outCurve);
         fclose(outCurve);
 
         cmsToneCurve * rereadCurve = (cmsToneCurve *)cmsReadTag(rereadProfile, cmsSigRedTRCTag);
-        float pqGamma = (float)cmsEstimateGamma(rereadCurve, 1.0f);
-        printf("Estimated PQ gamma: %f\n", pqGamma);
+        float gamma = (float)cmsEstimateGamma(rereadCurve, 1.0f);
+        printf("[%s] Estimated gamma: %f\n", title, gamma);
 
         {
             uint8_t signature[16];
@@ -125,10 +134,16 @@ int main(int argc, char * argv[])
             MD5_Final(signature, &ctx);
 
             uint8_t * s = signature;
-            printf("MD5: %x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x\n",
+            printf("[%s] MD5: %x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x\n",
+                title,
                 s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8], s[9], s[10], s[11], s[12], s[13], s[14], s[15]);
         }
     }
+}
 
+int main(int argc, char * argv[])
+{
+    makeCurve("PQ", "pqCurve.bin", pqCurve);
+    makeCurve("HLG", "hlgCurve.bin", hlgCurve);
     return 0;
 }
