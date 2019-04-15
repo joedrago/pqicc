@@ -134,7 +134,7 @@ void makeCurve(const char * title, const char * outputFilename, CurveFunc curveF
             MD5_Final(signature, &ctx);
 
             uint8_t * s = signature;
-            printf("[%s] MD5: %x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x\n",
+            printf("[%s] MD5: 0x%2.2x, 0x%2.2x, 0x%2.2x, 0x%2.2x, 0x%2.2x, 0x%2.2x, 0x%2.2x, 0x%2.2x, 0x%2.2x, 0x%2.2x, 0x%2.2x, 0x%2.2x, 0x%2.2x, 0x%2.2x, 0x%2.2x, 0x%2.2x\n",
                 title,
                 s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8], s[9], s[10], s[11], s[12], s[13], s[14], s[15]);
         }
